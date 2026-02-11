@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SentinelOps - SIEM Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app-wrapper" id="app">
+    <main class="main-content" style="margin-left:0" id="main-area">
+        <header class="top-bar">
+            <div class="top-bar-left">
+                <h2 class="page-title">Security Operations Center</h2>
+                <div class="live-indicator"><span class="dot"></span> SIEM</div>
+            </div>
+            <div class="top-bar-right">
+                <div class="search-box">
+                    <span class="search-icon" style="font-family:var(--font-mono);font-size:0.8rem;color:var(--text-muted)">/</span>
+                    <input type="text" placeholder="Search events, IPs, types..." id="global-search" oninput="filterEvents()" />
+                </div>
+                <button class="top-bar-btn" title="Clear Data" onclick="clearData()" style="font-family:var(--font-mono);font-size:0.7rem">CLR</button>
+                <span id="last-updated" style="font-size:0.65rem;font-family:var(--font-mono);color:var(--text-muted)"></span>
+            </div>
+        </header>
+
+        <div class="dashboard" id="dashboard-content"></div>
+    </main>
+</div>
+
+<script src="parser.js"></script>
+<script src="shared.js"></script>
+<script>
+const COLORS = { critical:"#ff3b5c", high:"#ff8c42", medium:"#ffc542", low:"#3b82f6", info:"#a78bfa" };
+
+function init() {
+    // Insert sidebar
+    document.getElementById("app").insertAdjacentHTML("afterbegin", renderSidebar("dashboard"));
+    document.getElementById("main-area").style.marginLeft = "260px";
+
+    const events = DataStore.load();
+    if (events.length > 0) {
+        renderDashboard();
+    } else {
+        renderUploadState();
+    }
+}
+
+function renderUploadState() {
+    document.getElementById("dashboard-content").innerHTML = `
+        <div class="upload-zone" id="upload-zone">
+            <div class="upload-icon">[+]</div>
+            <div class="upload-title">Upload Log Files to Analyze</div>
+            <div class="upload-desc">Drag and drop your log files here, or click to browse.<br>The SIEM engine will parse, classify, and analyze your logs automatically.</div>
+            <div class="upload-formats">Supported: .log, .txt, .csv, .json, .syslog -- Syslog, Apache, Nginx, Firewall, Auth, CSV, JSON</div>
+        </div>
+        <div class="file-list" id="file-list"></div>
+    `;
+    setupUploadZone("upload-zone", onFilesLoaded);
+    renderFileList();
+}
+
+function onFilesLoaded(events, files) {
+    renderDashboard();
+    // Refresh sidebar counts
+    document.querySelector(".sidebar").outerHTML = renderSidebar("dashboard");
+}
+
+function renderFileList() {
+    const files = DataStore.loadFiles();
+    const el = document.getElementById("file-list");
+    if (!el || !files.length) return;
+    el.innerHTML = files.map((f, i) => `
+        <div class="file-item animate-in">
+            <span class="file-name">${f.name}</span>
+            <span class="file-size">${(f.size / 1024).toFixed(1)} KB</span>
+            <span class="file-lines">${f.lines} events parsed</span>
+        </div>
+    `).join("");
+}
+
+function renderDashboard() {
+    const events = DataStore.load();
+    const summary = DataStore.getSummary();
+    if (!summary) { renderUploadState(); return; }
+
+    const sc = summary.severityCounts;
+
+    document.getElementById("dashboard-content").innerHTML = `
+        <!-- Upload bar -->
+        <div style="display:flex;gap:12px;align-items:center">
+            <div class="upload-zone" id="upload-zone" style="flex:1;padding:16px 24px;display:flex;align-items:center;gap:16px;text-align:left">
+                <div class="upload-icon" style="margin:0;font-size:1rem">[+]</div>
+                <div>
+                    <div class="upload-title" style="font-size:0.85rem;margin:0">Upload More Logs</div>
+                    <div class="upload-desc" style="font-size:0.72rem;margin:0">${events.length} events from ${DataStore.loadFiles().length} file(s)</div>
+                </div>
+            </div>
+            <button class="card-action-btn" onclick="exportEvents()" style="padding:12px 20px">EXPORT CSV</button>
+            <button class="card-action-btn" onclick="exportJSON()" style="padding:12px 20px">EXPORT JSON</button>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-row">
+            <div class="stat-card total animate-in">
+                <div class="stat-header"><span class="stat-label">Total Events</span><div class="stat-icon">E</div></div>
+                <div class="stat-value">${summary.total}</div>
+                <div class="stat-change">Avg risk: ${summary.avgRisk}/100</div>
+            </div>
+            <div class="stat-card critical animate-in">
+                <div class="stat-header"><span class="stat-label">Critical</span><div class="stat-icon">!</div></div>
+                <div class="stat-value">${sc.critical || 0}</div>
+                <div class="stat-change">Requires immediate action</div>
+            </div>
+            <div class="stat-card high animate-in">
+                <div class="stat-header"><span class="stat-label">High Severity</span><div class="stat-icon">H</div></div>
+                <div class="stat-value">${sc.high || 0}</div>
+                <div class="stat-change">Needs review</div>
+            </div>
+            <div class="stat-card resolved animate-in">
+                <div class="stat-header"><span class="stat-label">Low / Info</span><div class="stat-icon">i</div></div>
+                <div class="stat-value">${(sc.low || 0) + (sc.info || 0)}</div>
+                <div class="stat-change">Informational events</div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-row">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><span class="icon">T</span> Hourly Distribution</div>
+                </div>
+                <div class="card-body">
+                    <div class="timeline-chart" id="timeline-chart"></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><span class="icon">S</span> Severity Breakdown</div>
+                </div>
+                <div class="card-body">
+                    <div class="donut-chart-container">
+                        <svg class="donut-svg" viewBox="0 0 160 160" id="severity-donut"></svg>
+                        <div class="donut-legend" id="severity-legend"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Events Table -->
+        <div class="card events-section">
+            <div class="card-header">
+                <div class="card-title"><span class="icon">E</span> Security Events <span id="events-count" style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);margin-left:4px"></span></div>
+                <div class="card-actions">
+                    <button class="card-action-btn filter-severity-btn" data-severity="critical" onclick="filterBySeverity('critical')">Critical</button>
+                    <button class="card-action-btn filter-severity-btn" data-severity="high" onclick="filterBySeverity('high')">High</button>
+                    <button class="card-action-btn filter-severity-btn" data-severity="medium" onclick="filterBySeverity('medium')">Medium</button>
+                    <button class="card-action-btn" onclick="filterBySeverity(null)">All</button>
+                </div>
+            </div>
+            <div class="events-table-wrap">
+                <table class="events-table">
+                    <thead>
+                        <tr>
+                            <th>Severity</th><th>Event Type</th><th>Source</th>
+                            <th>Source IP</th><th>Dest IP</th><th>Risk</th>
+                            <th>Time</th><th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody id="events-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Bottom -->
+        <div class="bottom-row">
+            <div class="card">
+                <div class="card-header"><div class="card-title"><span class="icon">IP</span> Top Source IPs</div></div>
+                <div class="card-body"><div class="threat-actors-list" id="top-ips-list"></div></div>
+            </div>
+            <div class="card">
+                <div class="card-header"><div class="card-title"><span class="icon">ET</span> Top Event Types</div></div>
+                <div class="card-body"><div class="threat-actors-list" id="top-types-list"></div></div>
+            </div>
+        </div>
+    `;
+
+    setupUploadZone("upload-zone", onFilesLoaded);
+    renderTimeline(summary);
+    renderDonut(summary);
+    renderEventsTable(events);
+    renderTopList("top-ips-list", summary.topIPs);
+    renderTopList("top-types-list", summary.topTypes);
+    document.getElementById("last-updated").textContent = "Loaded " + new Date().toLocaleTimeString();
+}
+
+let currentSeverityFilter = null;
+
+function filterBySeverity(sev) {
+    currentSeverityFilter = currentSeverityFilter === sev ? null : sev;
+    document.querySelectorAll(".filter-severity-btn").forEach(b => {
+        b.classList.toggle("active", b.dataset.severity === currentSeverityFilter);
+    });
+    renderEventsTable(DataStore.load());
+}
+
+function filterEvents() {
+    renderEventsTable(DataStore.load());
+}
+
+function renderEventsTable(events) {
+    const tbody = document.getElementById("events-tbody");
+    if (!tbody) return;
+    const search = (document.getElementById("global-search")?.value || "").toLowerCase();
+
+    let filtered = events;
+    if (currentSeverityFilter) filtered = filtered.filter(e => e.severity === currentSeverityFilter);
+    if (search) filtered = filtered.filter(e =>
+        (e.event_type + e.source + e.source_ip + e.dest_ip + e.message + e.severity).toLowerCase().includes(search)
+    );
+
+    document.getElementById("events-count").textContent = filtered.length + " events";
+
+    tbody.innerHTML = filtered.slice(0, 100).map((e, i) => `
+        <tr style="animation:fadeInUp 0.2s ease ${i * 15}ms both">
+            <td><span class="severity-badge ${e.severity}"><span class="dot"></span>${e.severity}</span></td>
+            <td>${e.event_type}</td>
+            <td>${e.source}</td>
+            <td class="ip-address">${e.source_ip || "-"}</td>
+            <td class="ip-address">${e.dest_ip || "-"}</td>
+            <td>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <div class="risk-bar"><div class="risk-bar-fill ${getRiskClass(e.risk_score)}" style="width:${e.risk_score}%"></div></div>
+                    <span style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-secondary)">${e.risk_score}</span>
+                </div>
+            </td>
+            <td style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted)">${formatTime(e.timestamp)}</td>
+            <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:0.78rem" title="${(e.message||'').replace(/"/g,'&quot;')}">${e.message || "-"}</td>
+        </tr>
+    `).join("");
+}
+
+function renderTimeline(summary) {
+    const container = document.getElementById("timeline-chart");
+    if (!container) return;
+    const hc = summary.hourCounts;
+    const maxVal = Math.max(...Object.values(hc), 1);
+    const chartH = 180;
+
+    let html = "";
+    for (let h = 0; h < 24; h++) {
+        const count = hc[h] || 0;
+        const height = (count / maxVal) * chartH;
+        html += `
+            <div class="timeline-bar-group" title="${h}:00 - ${count} events">
+                <div class="timeline-bar medium" style="height:${height}px"></div>
+                ${h % 3 === 0 ? `<span class="timeline-label">${String(h).padStart(2,"0")}:00</span>` : ""}
+            </div>`;
+    }
+    container.innerHTML = html;
+}
+
+function renderDonut(summary) {
+    const svg = document.getElementById("severity-donut");
+    const legend = document.getElementById("severity-legend");
+    if (!svg) return;
+
+    const data = summary.severityCounts;
+    const total = Object.values(data).reduce((s, v) => s + v, 0) || 1;
+    const radius = 58, circumference = 2 * Math.PI * radius;
+    const sevs = ["critical", "high", "medium", "low", "info"];
+
+    let offset = 0;
+    const paths = sevs.map(sev => {
+        const count = data[sev] || 0;
+        const pct = count / total;
+        const dashLen = pct * circumference;
+        const dashOffset = -offset * circumference;
+        offset += pct;
+        return `<circle cx="80" cy="80" r="${radius}" fill="none" stroke="${COLORS[sev]}" stroke-width="14"
+            stroke-dasharray="${dashLen} ${circumference - dashLen}" stroke-dashoffset="${dashOffset}" />`;
+    });
+
+    svg.innerHTML = `${paths.join("")}
+        <text class="donut-center-text" x="80" y="75">${total}</text>
+        <text class="donut-center-label" x="80" y="95">EVENTS</text>`;
+
+    legend.innerHTML = sevs.map(sev => `
+        <div class="legend-item">
+            <div class="legend-dot ${sev}"></div>
+            <span class="legend-label">${sev.charAt(0).toUpperCase() + sev.slice(1)}</span>
+            <span class="legend-value">${data[sev] || 0}</span>
+        </div>`).join("");
+}
+
+function renderTopList(containerId, items) {
+    const el = document.getElementById(containerId);
+    if (!el || !items.length) { if (el) el.innerHTML = '<div class="empty-state"><div class="empty-desc">No data</div></div>'; return; }
+    const max = items[0].count;
+    el.innerHTML = items.map((item, i) => `
+        <div class="threat-actor-item" style="animation:fadeInUp 0.3s ease ${i*60}ms both">
+            <span class="threat-actor-rank">#${i+1}</span>
+            <span class="threat-actor-name">${item.name}</span>
+            <div class="threat-actor-bar"><div class="threat-actor-bar-fill" style="width:${(item.count/max)*100}%"></div></div>
+            <span class="threat-actor-count">${item.count}</span>
+        </div>`).join("");
+}
+
+function exportEvents() {
+    const events = DataStore.load();
+    const headers = "ID,Timestamp,Severity,Event Type,Source,Source IP,Dest IP,Risk Score,Message";
+    const rows = events.map(e => `${e.id},${e.timestamp},${e.severity},"${e.event_type}","${e.source}",${e.source_ip},${e.dest_ip},${e.risk_score},"${(e.message||'').replace(/"/g,'""')}"`);
+    downloadFile([headers, ...rows].join("\n"), "sentinelops-events.csv", "text/csv");
+}
+
+function exportJSON() {
+    downloadFile(JSON.stringify({ exported: new Date().toISOString(), events: DataStore.load() }, null, 2), "sentinelops-events.json", "application/json");
+}
+
+function clearData() {
+    if (confirm("Clear all loaded event data?")) {
+        DataStore.clear();
+        location.reload();
+    }
+}
+
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>

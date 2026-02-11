@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SentinelOps - Settings</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+        .settings-layout{display:grid;grid-template-columns:200px 1fr;gap:16px}
+        .settings-tabs{display:flex;flex-direction:column;gap:2px;position:sticky;top:84px}
+        .settings-tab{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:.85rem;transition:all .15s;border:none;background:none;text-align:left;font-family:var(--font-display)}
+        .settings-tab:hover{background:rgba(255,255,255,.04);color:var(--text-primary)}.settings-tab.active{background:rgba(34,211,238,.08);color:var(--accent-cyan)}
+        .settings-panel{display:none}.settings-panel.active{display:block}
+        .form-section{margin-bottom:28px}.form-section:last-child{margin-bottom:0}
+        .form-section-title{font-size:.95rem;font-weight:600;margin-bottom:4px}
+        .form-section-desc{font-size:.78rem;color:var(--text-muted);margin-bottom:16px;line-height:1.5}
+        .form-divider{height:1px;background:var(--border-dim);margin:24px 0}
+        .form-group{margin-bottom:16px}
+        .form-label{display:block;font-size:.78rem;font-weight:500;color:var(--text-secondary);margin-bottom:6px}
+        .form-select{appearance:none;width:100%;max-width:400px;padding:9px 14px;background:var(--bg-primary);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font-display);font-size:.85rem;outline:none;cursor:pointer}
+        .form-select:focus{border-color:var(--accent-cyan)}
+        .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border-dim)}.toggle-row:last-child{border-bottom:none}
+        .toggle-info{flex:1}.toggle-title{font-size:.85rem;font-weight:500;color:var(--text-primary);margin-bottom:2px}.toggle-desc{font-size:.72rem;color:var(--text-muted);line-height:1.4}
+        .toggle-switch{position:relative;width:44px;height:24px;flex-shrink:0;margin-left:16px}
+        .toggle-switch input{opacity:0;width:0;height:0}
+        .toggle-slider{position:absolute;inset:0;background:rgba(255,255,255,.08);border-radius:12px;cursor:pointer;transition:all .25s}
+        .toggle-slider::before{content:'';position:absolute;width:18px;height:18px;left:3px;bottom:3px;background:var(--text-muted);border-radius:50%;transition:all .25s}
+        .toggle-switch input:checked+.toggle-slider{background:rgba(34,211,238,.25)}.toggle-switch input:checked+.toggle-slider::before{transform:translateX(20px);background:var(--accent-cyan)}
+        .btn{padding:9px 20px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle);font-family:var(--font-display);font-size:.82rem;font-weight:500;cursor:pointer;transition:all .15s}
+        .btn-primary{background:var(--accent-cyan);color:var(--bg-primary);border-color:var(--accent-cyan)}.btn-primary:hover{filter:brightness(1.15)}
+        .btn-danger{background:transparent;color:var(--accent-red);border-color:rgba(255,59,92,.3)}.btn-danger:hover{background:var(--accent-red-glow)}
+        .btn-secondary{background:transparent;color:var(--text-secondary)}.btn-secondary:hover{background:rgba(255,255,255,.04)}
+        .btn-row{display:flex;gap:10px;margin-top:20px}
+        .toast{position:fixed;bottom:24px;right:24px;background:var(--bg-elevated);border:1px solid var(--accent-green);border-radius:var(--radius-sm);padding:12px 20px;font-size:.85rem;color:var(--accent-green);display:flex;align-items:center;gap:8px;z-index:1000;box-shadow:0 8px 24px rgba(0,0,0,.4);transform:translateY(100px);opacity:0;transition:all .3s ease}.toast.show{transform:translateY(0);opacity:1}
+        .data-info{background:var(--bg-elevated);border:1px solid var(--border-dim);border-radius:var(--radius-sm);padding:16px;margin-bottom:16px}
+        .data-info-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-dim);font-size:.82rem}.data-info-row:last-child{border-bottom:none}
+        .data-info-label{color:var(--text-muted);font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase}.data-info-value{color:var(--text-primary);font-family:var(--font-mono)}
+        @media(max-width:900px){.settings-layout{grid-template-columns:1fr}.settings-tabs{flex-direction:row;overflow-x:auto;position:static}}
+    </style>
+</head>
+<body>
+<div class="app-wrapper" id="app">
+    <main class="main-content" style="margin-left:0" id="main-area">
+        <header class="top-bar"><div class="top-bar-left"><h2 class="page-title">Settings</h2></div><div class="top-bar-right"><button class="btn btn-primary" onclick="showToast('Settings saved')">Save Changes</button></div></header>
+        <div class="dashboard">
+            <div class="settings-layout">
+                <div class="card" style="align-self:start"><div class="card-body" style="padding:12px"><div class="settings-tabs">
+                    <button class="settings-tab active" onclick="switchTab('data',this)">Data Management</button>
+                    <button class="settings-tab" onclick="switchTab('parser',this)">Parser Settings</button>
+                    <button class="settings-tab" onclick="switchTab('detection',this)">Detection Rules</button>
+                    <button class="settings-tab" onclick="switchTab('export',this)">Export / Backup</button>
+                </div></div></div>
+                <div>
+                    <div class="card settings-panel active" id="panel-data">
+                        <div class="card-header"><div class="card-title"><span class="icon">DM</span> Data Management</div></div>
+                        <div class="card-body">
+                            <div class="form-section"><div class="form-section-title">Loaded Data</div><div class="form-section-desc">Summary of currently loaded log data in this session.</div>
+                                <div class="data-info" id="data-info"></div>
+                                <div class="btn-row"><button class="btn btn-danger" onclick="if(confirm('Clear ALL loaded data?')){DataStore.clear();location.reload();}">Clear All Data</button>
+                                <a href="index.html" class="btn btn-primary" style="text-decoration:none;text-align:center">Upload More Logs</a></div>
+                            </div>
+                            <div class="form-divider"></div>
+                            <div class="form-section"><div class="form-section-title">Loaded Files</div><div id="file-list-settings"></div></div>
+                        </div>
+                    </div>
+                    <div class="card settings-panel" id="panel-parser">
+                        <div class="card-header"><div class="card-title"><span class="icon">PR</span> Parser Settings</div></div>
+                        <div class="card-body">
+                            <div class="form-section"><div class="form-section-title">Severity Classification</div><div class="form-section-desc">The parser automatically classifies log severity based on keyword matching. These rules apply to all imported logs.</div>
+                                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">Auto-classify Severity</div><div class="toggle-desc">Automatically assign severity based on log content keywords</div></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+                                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">Detect Attack Patterns</div><div class="toggle-desc">Identify SQL injection, XSS, directory traversal in web logs</div></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+                                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">Extract IP Addresses</div><div class="toggle-desc">Parse and extract source/destination IPs from log messages</div></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+                                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">Classify Event Types</div><div class="toggle-desc">Auto-label events as Brute Force, Malware, Phishing, etc.</div></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card settings-panel" id="panel-detection">
+                        <div class="card-header"><div class="card-title"><span class="icon">DR</span> Detection Rules</div></div>
+                        <div class="card-body">
+                            <div class="form-section"><div class="form-section-title">Active Rules</div><div class="form-section-desc">Rules the parser uses to classify and score events.</div>
+                                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">Brute Force Detection</div><div class="toggle-desc">Flag repeated failed login attempts</div></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+                                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">SQL Injection Detection</div><div class="toggle-desc">Detect UNION, SELECT, DROP patterns in web requests</div></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+                                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">XSS Detection</div><div class="toggle-desc">Detect script injection attempts in web logs</div></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+                                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">Directory Traversal</div><div class="toggle-desc">Detect ../ and path traversal patterns</div></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+                                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">Privilege Escalation</div><div class="toggle-desc">Flag sudo, root, and privilege change events</div></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+                                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">Data Exfiltration</div><div class="toggle-desc">Detect large outbound data transfer patterns</div></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+                                <div class="toggle-row"><div class="toggle-info"><div class="toggle-title">C2 Communication</div><div class="toggle-desc">Identify command-and-control beacon patterns</div></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card settings-panel" id="panel-export">
+                        <div class="card-header"><div class="card-title"><span class="icon">EX</span> Export and Backup</div></div>
+                        <div class="card-body">
+                            <div class="form-section"><div class="form-section-title">Export Data</div><div class="form-section-desc">Download your analyzed events in various formats.</div>
+                                <div class="btn-row">
+                                    <button class="btn btn-primary" onclick="exportCSV()">Export Events CSV</button>
+                                    <button class="btn btn-secondary" onclick="exportJSON()">Export Events JSON</button>
+                                    <button class="btn btn-secondary" onclick="exportReport()">Generate Text Report</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+<div class="toast" id="toast"><span id="toast-msg">Saved</span></div>
+<script src="parser.js"></script>
+<script src="shared.js"></script>
+<script>
+function init(){
+    document.getElementById("app").insertAdjacentHTML("afterbegin",renderSidebar("settings"));
+    document.getElementById("main-area").style.marginLeft="260px";
+    renderDataInfo();renderFilesList();
+}
+function switchTab(panel,el){document.querySelectorAll(".settings-tab").forEach(t=>t.classList.remove("active"));document.querySelectorAll(".settings-panel").forEach(p=>p.classList.remove("active"));el.classList.add("active");document.getElementById("panel-"+panel).classList.add("active");}
+function showToast(msg){const t=document.getElementById("toast");document.getElementById("toast-msg").textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2500);}
+function renderDataInfo(){
+    const events=DataStore.load();const files=DataStore.loadFiles();const s=DataStore.getSummary();
+    document.getElementById("data-info").innerHTML=`
+        <div class="data-info-row"><span class="data-info-label">Total Events</span><span class="data-info-value">${events.length.toLocaleString()}</span></div>
+        <div class="data-info-row"><span class="data-info-label">Files Loaded</span><span class="data-info-value">${files.length}</span></div>
+        <div class="data-info-row"><span class="data-info-label">Critical Events</span><span class="data-info-value" style="color:var(--accent-red)">${s?s.severityCounts.critical||0:0}</span></div>
+        <div class="data-info-row"><span class="data-info-label">High Events</span><span class="data-info-value" style="color:var(--accent-orange)">${s?s.severityCounts.high||0:0}</span></div>
+        <div class="data-info-row"><span class="data-info-label">Unique IPs</span><span class="data-info-value">${s?Object.keys(s.ipCounts).length:0}</span></div>
+        <div class="data-info-row"><span class="data-info-label">Avg Risk Score</span><span class="data-info-value">${s?s.avgRisk:0}/100</span></div>`;
+}
+function renderFilesList(){
+    const files=DataStore.loadFiles();const el=document.getElementById("file-list-settings");
+    if(!files.length){el.innerHTML='<div style="color:var(--text-muted);font-size:.82rem">No files loaded yet.</div>';return;}
+    el.innerHTML=files.map(f=>`<div class="file-item"><span class="file-name">${f.name}</span><span class="file-size">${(f.size/1024).toFixed(1)} KB</span><span class="file-lines">${f.lines} events</span></div>`).join("");
+}
+function exportCSV(){const events=DataStore.load();const h="ID,Timestamp,Severity,Type,Source,Source IP,Dest IP,Risk,Message";const r=events.map(e=>`${e.id},${e.timestamp},${e.severity},"${e.event_type}","${e.source}",${e.source_ip||""},${e.dest_ip||""},${e.risk_score},"${(e.message||"").replace(/"/g,'""')}"`);downloadFile([h,...r].join("\n"),"sentinelops-events.csv","text/csv");showToast("CSV exported");}
+function exportJSON(){downloadFile(JSON.stringify({exported:new Date().toISOString(),events:DataStore.load()},null,2),"sentinelops-events.json","application/json");showToast("JSON exported");}
+function exportReport(){const s=DataStore.getSummary();if(!s)return;let r=`SENTINELOPS SIEM REPORT\n${"=".repeat(50)}\nGenerated: ${new Date().toLocaleString()}\nTotal Events: ${s.total}\nAvg Risk: ${s.avgRisk}/100\n\nSEVERITY\n${"-".repeat(30)}\n`;Object.entries(s.severityCounts).forEach(([k,v])=>{r+=`  ${k.padEnd(12)} ${v}\n`;});r+=`\nTOP TYPES\n${"-".repeat(30)}\n`;s.topTypes.forEach(t=>{r+=`  ${t.name.padEnd(25)} ${t.count}\n`;});r+=`\nTOP IPs\n${"-".repeat(30)}\n`;s.topIPs.forEach(t=>{r+=`  ${t.name.padEnd(20)} ${t.count}\n`;});downloadFile(r,"sentinelops-report.txt","text/plain");showToast("Report generated");}
+document.addEventListener("DOMContentLoaded",init);
+</script>
+</body>
+</html>

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SentinelOps - Audit Log</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+        .audit-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+        .audit-select{appearance:none;padding:7px 32px 7px 12px;background:var(--bg-primary);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font-display);font-size:.8rem;outline:none;cursor:pointer}.audit-select:focus{border-color:var(--accent-cyan)}
+        .audit-search{flex:1;min-width:200px;padding:7px 14px;background:var(--bg-primary);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font-display);font-size:.8rem;outline:none}.audit-search:focus{border-color:var(--accent-cyan)}.audit-search::placeholder{color:var(--text-muted)}
+        .export-btn{padding:7px 16px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle);background:transparent;color:var(--text-secondary);font-family:var(--font-display);font-size:.8rem;cursor:pointer;transition:all .15s;white-space:nowrap}.export-btn:hover{background:rgba(255,255,255,.04);color:var(--text-primary)}
+        .export-btn.primary{background:var(--accent-cyan);color:var(--bg-primary);border-color:var(--accent-cyan)}.export-btn.primary:hover{filter:brightness(1.15)}
+        .audit-table{width:100%;border-collapse:collapse}
+        .audit-table thead th{font-size:.65rem;font-family:var(--font-mono);color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;padding:12px 14px;text-align:left;border-bottom:1px solid var(--border-subtle);white-space:nowrap;position:sticky;top:0;background:var(--bg-card);cursor:pointer}
+        .audit-table thead th:hover{color:var(--text-secondary)}
+        .audit-table tbody tr{transition:background .1s;cursor:pointer}.audit-table tbody tr:hover{background:rgba(255,255,255,.02)}
+        .audit-table td{padding:11px 14px;font-size:.82rem;border-bottom:1px solid var(--border-dim);vertical-align:middle}
+        .audit-timestamp{font-family:var(--font-mono);font-size:.73rem;color:var(--text-muted);white-space:nowrap}
+        .audit-msg{color:var(--text-secondary);font-size:.78rem;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .pagination{display:flex;align-items:center;justify-content:space-between;padding:14px 0 0}
+        .pagination-info{font-size:.75rem;font-family:var(--font-mono);color:var(--text-muted)}
+        .pagination-btns{display:flex;gap:4px}
+        .page-btn{width:32px;height:32px;border-radius:var(--radius-sm);border:1px solid var(--border-subtle);background:transparent;color:var(--text-secondary);font-family:var(--font-mono);font-size:.75rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+        .page-btn:hover{background:rgba(255,255,255,.04);color:var(--text-primary)}.page-btn.active{background:rgba(34,211,238,.1);color:var(--accent-cyan);border-color:rgba(34,211,238,.3)}
+        .audit-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+        .audit-stat-card{background:var(--bg-elevated);border:1px solid var(--border-dim);border-radius:var(--radius-sm);padding:14px 16px;text-align:center}
+        .asv{font-size:1.4rem;font-weight:700;font-family:var(--font-mono)}.asl{font-size:.65rem;font-family:var(--font-mono);color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-top:4px}
+        .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:500;align-items:center;justify-content:center}.modal-overlay.show{display:flex}
+        .modal{background:var(--bg-card);border:1px solid var(--border-medium);border-radius:var(--radius-lg);width:600px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:fadeInUp .3s ease}
+        .modal-header{padding:18px 22px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between}.modal-header h3{font-size:1rem;font-weight:600}
+        .modal-close{background:none;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer}.modal-close:hover{color:var(--text-primary)}
+        .modal-body{padding:22px}.detail-row{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-dim)}.detail-row:last-child{border-bottom:none}
+        .dk{font-size:.7rem;font-family:var(--font-mono);color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;width:100px;flex-shrink:0;padding-top:2px}.dv{font-size:.85rem;color:var(--text-primary);word-break:break-all}
+        .raw-block{background:var(--bg-primary);border:1px solid var(--border-dim);border-radius:var(--radius-sm);padding:12px;font-family:var(--font-mono);font-size:.72rem;color:var(--text-secondary);white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;margin-top:8px}
+        @media(max-width:900px){.audit-stats{grid-template-columns:repeat(2,1fr)}.audit-toolbar{flex-direction:column;align-items:stretch}}
+    </style>
+</head>
+<body>
+<div class="app-wrapper" id="app">
+    <main class="main-content" style="margin-left:0" id="main-area">
+        <header class="top-bar">
+            <div class="top-bar-left"><h2 class="page-title">Audit Log</h2><div class="live-indicator"><span class="dot"></span> SIEM</div></div>
+            <div class="top-bar-right">
+                <button class="export-btn" onclick="expCSV()">Export CSV</button>
+                <button class="export-btn" onclick="expJSON()">Export JSON</button>
+                <button class="export-btn primary" onclick="expReport()">Generate Report</button>
+            </div>
+        </header>
+        <div class="dashboard" id="audit-content"></div>
+    </main>
+</div>
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)"><div class="modal" onclick="event.stopPropagation()"><div class="modal-header"><h3 id="modal-title">Event Detail</h3><button class="modal-close" onclick="closeModal()">X</button></div><div class="modal-body" id="modal-body"></div></div></div>
+<script src="parser.js"></script>
+<script src="shared.js"></script>
+<script>
+let allEvents=[];let filtered=[];let page=1;const PER=30;let sortField="timestamp";let sortAsc=false;
+
+function init(){
+    document.getElementById("app").insertAdjacentHTML("afterbegin",renderSidebar("auditlog"));
+    document.getElementById("main-area").style.marginLeft="260px";
+    allEvents=DataStore.load();
+    if(!allEvents.length){document.getElementById("audit-content").innerHTML='<div class="empty-state"><div class="empty-icon">[LOG]</div><div class="empty-title">No Log Data</div><div class="empty-desc">Upload log files on the <a href="index.html" style="color:var(--accent-cyan)">Dashboard</a> first.</div></div>';return;}
+    renderPage();
+}
+
+function renderPage(){
+    const s=DataStore.getSummary();const sc=s?s.severityCounts:{};
+    document.getElementById("audit-content").innerHTML=`
+        <div class="audit-stats">
+            <div class="audit-stat-card animate-in"><div class="asv" style="color:var(--text-primary)">${allEvents.length.toLocaleString()}</div><div class="asl">Total Entries</div></div>
+            <div class="audit-stat-card animate-in"><div class="asv" style="color:var(--accent-red)">${(sc.critical||0)+(sc.high||0)}</div><div class="asl">High+ Severity</div></div>
+            <div class="audit-stat-card animate-in"><div class="asv" style="color:var(--accent-cyan)">${s?Object.keys(s.ipCounts).length:0}</div><div class="asl">Unique IPs</div></div>
+            <div class="audit-stat-card animate-in"><div class="asv" style="color:var(--accent-purple)">${s?Object.keys(s.sourceCounts).length:0}</div><div class="asl">Log Sources</div></div>
+        </div>
+        <div class="card"><div class="card-body"><div class="audit-toolbar">
+            <input class="audit-search" type="text" placeholder="Search events, IPs, types, messages..." id="audit-search" oninput="applyFilters()" />
+            <select class="audit-select" id="f-severity" onchange="applyFilters()"><option value="">All Severity</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="info">Info</option></select>
+            <select class="audit-select" id="f-type" onchange="applyFilters()"><option value="">All Types</option></select>
+            <select class="audit-select" id="f-source" onchange="applyFilters()"><option value="">All Sources</option></select>
+            <span style="font-family:var(--font-mono);font-size:.72rem;color:var(--text-muted);margin-left:auto;white-space:nowrap" id="result-count"></span>
+        </div></div></div>
+        <div class="card"><div class="events-table-wrap">
+            <table class="audit-table"><thead><tr>
+                <th onclick="doSort('id')">ID</th><th onclick="doSort('timestamp')">Timestamp</th><th onclick="doSort('severity')">Severity</th>
+                <th onclick="doSort('event_type')">Type</th><th onclick="doSort('source')">Source</th><th>Source IP</th><th>Message</th>
+            </tr></thead><tbody id="audit-tbody"></tbody></table></div>
+            <div style="padding:0 14px 14px"><div class="pagination"><div class="pagination-info" id="pg-info"></div><div class="pagination-btns" id="pg-btns"></div></div></div>
+        </div>`;
+
+    populateFilters();applyFilters();
+}
+
+function populateFilters(){
+    const types=[...new Set(allEvents.map(e=>e.event_type))].sort();
+    const sources=[...new Set(allEvents.map(e=>e.source))].sort();
+    const tSel=document.getElementById("f-type");types.forEach(t=>{const o=document.createElement("option");o.value=t;o.textContent=t;tSel.appendChild(o);});
+    const sSel=document.getElementById("f-source");sources.forEach(s=>{const o=document.createElement("option");o.value=s;o.textContent=s;sSel.appendChild(o);});
+}
+
+function applyFilters(){
+    const search=(document.getElementById("audit-search")?.value||"").toLowerCase();
+    const sev=document.getElementById("f-severity")?.value;
+    const type=document.getElementById("f-type")?.value;
+    const source=document.getElementById("f-source")?.value;
+
+    filtered=allEvents.filter(e=>{
+        if(sev&&e.severity!==sev)return false;
+        if(type&&e.event_type!==type)return false;
+        if(source&&e.source!==source)return false;
+        if(search){const hay=(e.id+e.event_type+e.source+e.source_ip+e.dest_ip+e.message+e.severity).toLowerCase();if(!hay.includes(search))return false;}
+        return true;
+    });
+
+    filtered.sort((a,b)=>{let va=a[sortField],vb=b[sortField];if(sortField==="timestamp"){va=new Date(va);vb=new Date(vb);}if(va<vb)return sortAsc?-1:1;if(va>vb)return sortAsc?1:-1;return 0;});
+    page=1;renderTable();
+    document.getElementById("result-count").textContent=filtered.length+" entries";
+}
+
+function doSort(field){if(sortField===field)sortAsc=!sortAsc;else{sortField=field;sortAsc=false;}applyFilters();}
+
+function renderTable(){
+    const tbody=document.getElementById("audit-tbody");
+    const start=(page-1)*PER;const rows=filtered.slice(start,start+PER);
+    tbody.innerHTML=rows.map((e,i)=>`
+        <tr style="animation:fadeInUp .2s ease ${i*15}ms both" onclick="showDetail('${e.id}')">
+            <td style="font-family:var(--font-mono);font-size:.72rem;color:var(--text-muted)">${e.id}</td>
+            <td class="audit-timestamp">${formatTime(e.timestamp)}</td>
+            <td><span class="severity-badge ${e.severity}"><span class="dot"></span>${e.severity}</span></td>
+            <td>${e.event_type}</td>
+            <td style="font-size:.78rem;color:var(--text-secondary)">${e.source}</td>
+            <td class="ip-address">${e.source_ip||"-"}</td>
+            <td class="audit-msg" title="${(e.message||'').replace(/"/g,'&quot;')}">${e.message||"-"}</td>
+        </tr>`).join("");
+
+    const totalPages=Math.ceil(filtered.length/PER);const end=Math.min(start+PER,filtered.length);
+    document.getElementById("pg-info").textContent=`Showing ${start+1}-${end} of ${filtered.length}`;
+    let btns=`<button class="page-btn" onclick="goPage(${page-1})" ${page===1?"disabled":""}>&#8249;</button>`;
+    for(let p=1;p<=Math.min(totalPages,7);p++)btns+=`<button class="page-btn ${p===page?'active':''}" onclick="goPage(${p})">${p}</button>`;
+    if(totalPages>7)btns+=`<button class="page-btn" disabled>...</button><button class="page-btn ${totalPages===page?'active':''}" onclick="goPage(${totalPages})">${totalPages}</button>`;
+    btns+=`<button class="page-btn" onclick="goPage(${page+1})" ${page===totalPages?"disabled":""}>&#8250;</button>`;
+    document.getElementById("pg-btns").innerHTML=btns;
+}
+
+function goPage(p){const tp=Math.ceil(filtered.length/PER);if(p<1||p>tp)return;page=p;renderTable();}
+
+function showDetail(id){
+    const e=allEvents.find(x=>x.id===id);if(!e)return;
+    document.getElementById("modal-title").textContent=e.id+" - "+e.event_type;
+    document.getElementById("modal-body").innerHTML=`
+        <div class="detail-row"><div class="dk">ID</div><div class="dv" style="font-family:var(--font-mono)">${e.id}</div></div>
+        <div class="detail-row"><div class="dk">Timestamp</div><div class="dv" style="font-family:var(--font-mono)">${new Date(e.timestamp).toLocaleString()}</div></div>
+        <div class="detail-row"><div class="dk">Severity</div><div class="dv"><span class="severity-badge ${e.severity}"><span class="dot"></span>${e.severity}</span></div></div>
+        <div class="detail-row"><div class="dk">Type</div><div class="dv">${e.event_type}</div></div>
+        <div class="detail-row"><div class="dk">Source</div><div class="dv">${e.source}</div></div>
+        <div class="detail-row"><div class="dk">Source IP</div><div class="dv" style="font-family:var(--font-mono)">${e.source_ip||"-"}</div></div>
+        <div class="detail-row"><div class="dk">Dest IP</div><div class="dv" style="font-family:var(--font-mono)">${e.dest_ip||"-"}</div></div>
+        <div class="detail-row"><div class="dk">Risk Score</div><div class="dv" style="font-family:var(--font-mono)">${e.risk_score}/100</div></div>
+        <div class="detail-row"><div class="dk">Message</div><div class="dv">${e.message||"-"}</div></div>
+        <div style="margin-top:12px"><div class="dk" style="margin-bottom:6px">Raw Log Entry</div><div class="raw-block">${(e.raw||"").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</div></div>`;
+    document.getElementById("modal-overlay").classList.add("show");
+}
+
+function closeModal(ev){if(!ev||ev.target===document.getElementById("modal-overlay"))document.getElementById("modal-overlay").classList.remove("show");}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
+
+function expCSV(){const h="ID,Timestamp,Severity,Type,Source,Source IP,Dest IP,Risk,Message";const r=filtered.map(e=>`${e.id},${e.timestamp},${e.severity},"${e.event_type}","${e.source}",${e.source_ip||""},${e.dest_ip||""},${e.risk_score},"${(e.message||"").replace(/"/g,'""')}"`);downloadFile([h,...r].join("\n"),"sentinelops-audit-log.csv","text/csv");}
+function expJSON(){downloadFile(JSON.stringify({exported:new Date().toISOString(),count:filtered.length,entries:filtered},null,2),"sentinelops-audit-log.json","application/json");}
+function expReport(){const s=DataStore.getSummary();if(!s)return;let r=`SENTINELOPS AUDIT LOG REPORT\n${"=".repeat(50)}\nGenerated: ${new Date().toLocaleString()}\nFiltered Entries: ${filtered.length}\nTotal Events: ${allEvents.length}\n\n`;r+=`SEVERITY\n${"-".repeat(30)}\n`;Object.entries(s.severityCounts).forEach(([k,v])=>{r+=`  ${k.padEnd(12)} ${v}\n`;});r+=`\nTOP TYPES\n${"-".repeat(30)}\n`;s.topTypes.forEach(t=>{r+=`  ${t.name.padEnd(25)} ${t.count}\n`;});r+=`\nTOP IPs\n${"-".repeat(30)}\n`;s.topIPs.forEach(t=>{r+=`  ${t.name.padEnd(20)} ${t.count}\n`;});r+=`\nRECENT (Last 30)\n${"-".repeat(30)}\n`;filtered.slice(0,30).forEach(e=>{r+=`  [${formatTime(e.timestamp)}] ${e.severity.padEnd(9)} ${e.event_type.padEnd(22)} ${e.source_ip||"no-ip"}\n`;});r+=`\n${"=".repeat(50)}\nEnd\n`;downloadFile(r,"sentinelops-audit-report.txt","text/plain");}
+
+document.addEventListener("DOMContentLoaded",init);
+</script>
+</body>
+</html>

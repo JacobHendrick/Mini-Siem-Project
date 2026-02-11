@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SentinelOps - Analytics</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+        .analytics-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.full-width{grid-column:1/-1}
+        .metric-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+        .metric-card{background:var(--bg-elevated);border:1px solid var(--border-dim);border-radius:var(--radius-sm);padding:16px;text-align:center}
+        .metric-card .mv{font-size:1.6rem;font-weight:700;font-family:var(--font-mono);margin-bottom:4px}
+        .metric-card .ml{font-size:.65rem;font-family:var(--font-mono);color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em}
+        .hbar-chart{display:flex;flex-direction:column;gap:14px}
+        .hbar-item{display:flex;align-items:center;gap:12px}
+        .hbar-label{width:140px;font-size:.8rem;color:var(--text-secondary);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .hbar-track{flex:1;height:8px;background:rgba(255,255,255,.04);border-radius:4px;overflow:hidden}
+        .hbar-fill{height:100%;border-radius:4px;transition:width .8s ease}
+        .hbar-value{font-family:var(--font-mono);font-size:.75rem;color:var(--text-primary);width:40px}
+        .gauge-row{display:flex;gap:24px;justify-content:space-around;padding:10px 0}
+        .gauge-item{text-align:center}.gauge-svg{width:120px;height:120px}
+        .gauge-bg{fill:none;stroke:rgba(255,255,255,.06);stroke-width:8}
+        .gauge-fill{fill:none;stroke-width:8;stroke-linecap:round;transition:stroke-dashoffset 1s ease}
+        .gauge-text{font-family:var(--font-mono);font-size:18px;font-weight:700;fill:var(--text-primary);text-anchor:middle;dominant-baseline:central}
+        .gauge-label{font-size:.7rem;font-family:var(--font-mono);color:var(--text-muted);margin-top:6px;text-transform:uppercase;letter-spacing:.06em}
+        .heatmap-grid{display:grid;grid-template-columns:40px repeat(24,1fr);gap:2px;font-size:.6rem;font-family:var(--font-mono)}
+        .heatmap-label{color:var(--text-muted);display:flex;align-items:center;justify-content:flex-end;padding-right:6px}
+        .heatmap-header{color:var(--text-muted);text-align:center;padding-bottom:4px}
+        .heatmap-cell{aspect-ratio:1;border-radius:2px;cursor:pointer;transition:all .15s;position:relative}
+        .heatmap-cell:hover{transform:scale(1.4);z-index:2;outline:1px solid var(--border-medium)}
+        @media(max-width:900px){.analytics-grid{grid-template-columns:1fr}.full-width{grid-column:1}.metric-cards{grid-template-columns:repeat(2,1fr)}.gauge-row{flex-direction:column;align-items:center}}
+    </style>
+</head>
+<body>
+<div class="app-wrapper" id="app">
+    <main class="main-content" style="margin-left:0" id="main-area">
+        <header class="top-bar">
+            <div class="top-bar-left"><h2 class="page-title">Security Analytics</h2><div class="live-indicator"><span class="dot"></span> SIEM</div></div>
+            <div class="top-bar-right">
+                <button class="card-action-btn" onclick="exportReport()" style="padding:8px 16px">EXPORT REPORT</button>
+            </div>
+        </header>
+        <div class="dashboard" id="analytics-content"></div>
+    </main>
+</div>
+<script src="parser.js"></script>
+<script src="shared.js"></script>
+<script>
+const COLORS={critical:"#ff3b5c",high:"#ff8c42",medium:"#ffc542",low:"#3b82f6",info:"#a78bfa"};
+
+function init(){
+    document.getElementById("app").insertAdjacentHTML("afterbegin",renderSidebar("analytics"));
+    document.getElementById("main-area").style.marginLeft="260px";
+    const events=DataStore.load();
+    if(!events.length){document.getElementById("analytics-content").innerHTML='<div class="empty-state"><div class="empty-icon">[G]</div><div class="empty-title">No Data to Analyze</div><div class="empty-desc">Upload log files on the <a href="index.html" style="color:var(--accent-cyan)">Dashboard</a> first.</div></div>';return;}
+    render();
+}
+
+function render(){
+    const summary=DataStore.getSummary();const events=DataStore.load();if(!summary)return;
+    const sc=summary.severityCounts;
+    const uniqueIPs=Object.keys(summary.ipCounts).length;
+    const uniqueSources=Object.keys(summary.sourceCounts).length;
+
+    document.getElementById("analytics-content").innerHTML=`
+        <div class="metric-cards">
+            <div class="metric-card animate-in"><div class="mv" style="color:var(--text-primary)">${summary.total.toLocaleString()}</div><div class="ml">Total Events</div></div>
+            <div class="metric-card animate-in"><div class="mv" style="color:var(--accent-red)">${sc.critical||0}</div><div class="ml">Critical Events</div></div>
+            <div class="metric-card animate-in"><div class="mv" style="color:var(--accent-cyan)">${uniqueIPs}</div><div class="ml">Unique Source IPs</div></div>
+            <div class="metric-card animate-in"><div class="mv" style="color:var(--accent-purple)">${uniqueSources}</div><div class="ml">Log Sources</div></div>
+        </div>
+        <div class="analytics-grid">
+            <div class="card full-width"><div class="card-header"><div class="card-title"><span class="icon">T</span> Hourly Distribution</div></div>
+                <div class="card-body"><div class="timeline-chart" id="hour-chart" style="height:200px"></div></div></div>
+            <div class="card full-width"><div class="card-header"><div class="card-title"><span class="icon">P</span> Security Posture</div></div>
+                <div class="card-body"><div class="gauge-row" id="gauges"></div></div></div>
+            <div class="card"><div class="card-header"><div class="card-title"><span class="icon">AT</span> Top Event Types</div></div>
+                <div class="card-body"><div class="hbar-chart" id="types-chart"></div></div></div>
+            <div class="card"><div class="card-header"><div class="card-title"><span class="icon">IP</span> Top Source IPs</div></div>
+                <div class="card-body"><div class="hbar-chart" id="ips-chart"></div></div></div>
+            <div class="card"><div class="card-header"><div class="card-title"><span class="icon">SR</span> Detection Sources</div></div>
+                <div class="card-body"><div class="hbar-chart" id="sources-chart"></div></div></div>
+            <div class="card"><div class="card-header"><div class="card-title"><span class="icon">SV</span> Severity Distribution</div></div>
+                <div class="card-body"><div class="donut-chart-container"><svg class="donut-svg" viewBox="0 0 160 160" id="sev-donut"></svg><div class="donut-legend" id="sev-legend"></div></div></div></div>
+            <div class="card full-width"><div class="card-header"><div class="card-title"><span class="icon">HM</span> Hourly Heatmap by Day of Week</div></div>
+                <div class="card-body"><div class="heatmap-grid" id="heatmap"></div></div></div>
+        </div>`;
+
+    renderHourChart(summary);renderGauges(summary);renderBarChart("types-chart",summary.topTypes,"var(--accent-orange)");
+    renderBarChart("ips-chart",summary.topIPs,"var(--accent-cyan)");renderBarChart("sources-chart",summary.topSources,"var(--accent-blue)");
+    renderDonut(summary);renderHeatmap(events);
+}
+
+function renderHourChart(s){
+    const el=document.getElementById("hour-chart");if(!el)return;
+    const hc=s.hourCounts;const max=Math.max(...Object.values(hc),1);
+    let html="";
+    for(let h=0;h<24;h++){
+        const count=hc[h]||0;const height=(count/max)*170;
+        html+=`<div class="timeline-bar-group" title="${h}:00 - ${count} events"><div class="timeline-bar medium" style="height:${height}px"></div>${h%3===0?`<span class="timeline-label">${String(h).padStart(2,"0")}:00</span>`:""}</div>`;
+    }
+    el.innerHTML=html;
+}
+
+function renderGauges(s){
+    const total=s.total||1;const sc=s.severityCounts;
+    const critPct=Math.round(((sc.critical||0)/total)*100);
+    const highPct=Math.round(((sc.high||0)/total)*100);
+    const safeScore=Math.max(0,100-critPct*3-highPct*2);
+    const gauges=[
+        {label:"Threat Level",value:Math.min(100,critPct*3+highPct*2),color:"var(--accent-red)"},
+        {label:"Safe Score",value:safeScore,color:"var(--accent-green)"},
+        {label:"Avg Risk",value:s.avgRisk,color:"var(--accent-orange)"},
+    ];
+    const r=44,c=2*Math.PI*r;
+    document.getElementById("gauges").innerHTML=gauges.map(g=>{
+        const offset=c*(1-(g.value/100)*0.75);
+        return `<div class="gauge-item"><svg class="gauge-svg" viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="${r}" class="gauge-bg" stroke-dasharray="${c*0.75} ${c*0.25}" stroke-dashoffset="${-c*0.125}" transform="rotate(135 60 60)"/>
+            <circle cx="60" cy="60" r="${r}" class="gauge-fill" stroke="${g.color}" stroke-dasharray="${c*0.75} ${c*0.25}" stroke-dashoffset="${offset}" transform="rotate(135 60 60)"/>
+            <text class="gauge-text" x="60" y="60">${g.value}%</text></svg><div class="gauge-label">${g.label}</div></div>`;
+    }).join("");
+}
+
+function renderBarChart(id,items,color){
+    const el=document.getElementById(id);if(!el||!items.length){if(el)el.innerHTML='<div style="color:var(--text-muted);font-size:.8rem;text-align:center;padding:20px">No data</div>';return;}
+    const max=items[0].count;
+    el.innerHTML=items.map(t=>`<div class="hbar-item"><div class="hbar-label">${t.name}</div><div class="hbar-track"><div class="hbar-fill" style="width:${(t.count/max)*100}%;background:${color}"></div></div><div class="hbar-value">${t.count}</div></div>`).join("");
+}
+
+function renderDonut(s){
+    const svg=document.getElementById("sev-donut");const legend=document.getElementById("sev-legend");if(!svg)return;
+    const data=s.severityCounts;const total=Object.values(data).reduce((a,v)=>a+v,0)||1;
+    const radius=58,circumference=2*Math.PI*radius;const sevs=["critical","high","medium","low","info"];
+    let offset=0;
+    svg.innerHTML=sevs.map(sev=>{const count=data[sev]||0;const pct=count/total;const dashLen=pct*circumference;const dashOffset=-offset*circumference;offset+=pct;
+        return `<circle cx="80" cy="80" r="${radius}" fill="none" stroke="${COLORS[sev]}" stroke-width="14" stroke-dasharray="${dashLen} ${circumference-dashLen}" stroke-dashoffset="${dashOffset}"/>`;
+    }).join("")+`<text class="donut-center-text" x="80" y="75">${total}</text><text class="donut-center-label" x="80" y="95">EVENTS</text>`;
+    legend.innerHTML=sevs.map(sev=>`<div class="legend-item"><div class="legend-dot ${sev}"></div><span class="legend-label">${sev.charAt(0).toUpperCase()+sev.slice(1)}</span><span class="legend-value">${data[sev]||0}</span></div>`).join("");
+}
+
+function renderHeatmap(events){
+    const el=document.getElementById("heatmap");if(!el)return;
+    const days=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+    const grid={};days.forEach(d=>{grid[d]={};for(let h=0;h<24;h++)grid[d][h]=0;});
+    events.forEach(e=>{const d=new Date(e.timestamp);const day=days[d.getDay()===0?6:d.getDay()-1];const hour=d.getHours();if(grid[day])grid[day][hour]++;});
+    const maxVal=Math.max(...Object.values(grid).flatMap(d=>Object.values(d)),1);
+    let html='<div></div>';for(let h=0;h<24;h++)html+=`<div class="heatmap-header">${h%3===0?h+":00":""}</div>`;
+    days.forEach(day=>{html+=`<div class="heatmap-label">${day}</div>`;for(let h=0;h<24;h++){const val=grid[day][h];const alpha=val/maxVal;
+        let color;if(alpha>.75)color=`rgba(255,59,92,${alpha})`;else if(alpha>.5)color=`rgba(255,140,66,${alpha*.8})`;else if(alpha>.25)color=`rgba(255,197,66,${alpha*.5})`;else color=`rgba(34,211,238,${alpha*.3})`;
+        html+=`<div class="heatmap-cell" style="background:${color}" title="${day} ${h}:00 - ${val} events"></div>`;}});
+    el.innerHTML=html;
+}
+
+function exportReport(){
+    const s=DataStore.getSummary();if(!s)return;const events=DataStore.load();
+    let r=`SENTINELOPS SIEM - ANALYTICS REPORT\n${"=".repeat(50)}\nGenerated: ${new Date().toLocaleString()}\nTotal Events: ${s.total}\n\n`;
+    r+=`SEVERITY BREAKDOWN\n${"-".repeat(30)}\n`;Object.entries(s.severityCounts).forEach(([k,v])=>{r+=`  ${k.padEnd(12)} ${v}\n`;});
+    r+=`\nTOP EVENT TYPES\n${"-".repeat(30)}\n`;s.topTypes.forEach(t=>{r+=`  ${t.name.padEnd(25)} ${t.count}\n`;});
+    r+=`\nTOP SOURCE IPs\n${"-".repeat(30)}\n`;s.topIPs.forEach(t=>{r+=`  ${t.name.padEnd(20)} ${t.count}\n`;});
+    r+=`\nTOP LOG SOURCES\n${"-".repeat(30)}\n`;s.topSources.forEach(t=>{r+=`  ${t.name.padEnd(25)} ${t.count}\n`;});
+    r+=`\n${"=".repeat(50)}\nEnd of Report\n`;
+    downloadFile(r,"sentinelops-analytics-report.txt","text/plain");
+}
+
+document.addEventListener("DOMContentLoaded",init);
+</script>
+</body>
+</html>

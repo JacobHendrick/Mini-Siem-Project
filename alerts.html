@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SentinelOps - Alerts</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+        .alerts-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.alert-card{background:var(--bg-card);border:1px solid var(--border-dim);border-radius:var(--radius-md);overflow:hidden;transition:all .25s;cursor:pointer}.alert-card:hover{border-color:var(--border-medium);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.3)}.alert-card.critical{border-left:3px solid var(--accent-red)}.alert-card.high{border-left:3px solid var(--accent-orange)}.alert-card.medium{border-left:3px solid var(--accent-yellow)}.alert-card-header{padding:16px 20px 12px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.alert-card-title{font-size:.95rem;font-weight:600;display:flex;align-items:center;gap:8px}.alert-card-body{padding:0 20px 16px}.alert-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px}.alert-meta-item{display:flex;flex-direction:column;gap:2px}.alert-meta-label{font-size:.6rem;font-family:var(--font-mono);color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em}.alert-meta-value{font-size:.8rem;color:var(--text-secondary);font-family:var(--font-mono)}.filter-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.filter-chip{padding:6px 14px;border-radius:20px;border:1px solid var(--border-subtle);background:0 0;color:var(--text-secondary);font-family:var(--font-mono);font-size:.7rem;cursor:pointer;transition:all .15s}.filter-chip:hover{background:rgba(255,255,255,.04);color:var(--text-primary)}.filter-chip.active{background:rgba(34,211,238,.1);color:var(--accent-cyan);border-color:rgba(34,211,238,.3)}.alerts-count{font-family:var(--font-mono);font-size:.75rem;color:var(--text-muted);margin-left:auto}
+        .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:500;align-items:center;justify-content:center}.modal-overlay.show{display:flex}.modal{background:var(--bg-card);border:1px solid var(--border-medium);border-radius:var(--radius-lg);width:620px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:fadeInUp .3s ease}.modal-header{padding:20px 24px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between}.modal-header h3{font-size:1.05rem;font-weight:600}.modal-close{background:0 0;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer}.modal-close:hover{color:var(--text-primary)}.modal-body{padding:24px}.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.detail-item{display:flex;flex-direction:column;gap:4px}.detail-label{font-size:.65rem;font-family:var(--font-mono);color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em}.detail-value{font-size:.9rem;color:var(--text-primary)}.detail-divider{grid-column:1/-1;height:1px;background:var(--border-dim);margin:4px 0}.raw-log{grid-column:1/-1;background:var(--bg-primary);border:1px solid var(--border-dim);border-radius:var(--radius-sm);padding:12px;font-family:var(--font-mono);font-size:.72rem;color:var(--text-secondary);white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;margin-top:8px}
+        @media(max-width:900px){.alerts-grid{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<div class="app-wrapper" id="app">
+    <main class="main-content" style="margin-left:0" id="main-area">
+        <header class="top-bar">
+            <div class="top-bar-left"><h2 class="page-title">Alerts</h2><div class="live-indicator"><span class="dot"></span> SIEM</div></div>
+            <div class="top-bar-right">
+                <div class="search-box"><span class="search-icon" style="font-family:var(--font-mono);font-size:.8rem;color:var(--text-muted)">/</span><input type="text" placeholder="Search alerts..." id="alert-search" oninput="renderAlerts()" /></div>
+                <button class="card-action-btn" onclick="exportAlerts()" style="padding:8px 16px">EXPORT</button>
+            </div>
+        </header>
+        <div class="dashboard" id="alerts-content"></div>
+    </main>
+</div>
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)"><div class="modal" onclick="event.stopPropagation()"><div class="modal-header"><h3 id="modal-title">Alert Detail</h3><button class="modal-close" onclick="closeModal()">X</button></div><div class="modal-body" id="modal-body"></div></div></div>
+
+<script src="parser.js"></script>
+<script src="shared.js"></script>
+<script>
+const COLORS={critical:"#ff3b5c",high:"#ff8c42",medium:"#ffc542",low:"#3b82f6",info:"#a78bfa"};
+let currentFilter="all";
+
+function init(){
+    document.getElementById("app").insertAdjacentHTML("afterbegin",renderSidebar("alerts"));
+    document.getElementById("main-area").style.marginLeft="260px";
+    const events=DataStore.load();
+    if(!events.length){document.getElementById("alerts-content").innerHTML='<div class="empty-state"><div class="empty-icon">[!]</div><div class="empty-title">No Alerts</div><div class="empty-desc">Upload log files on the <a href="index.html" style="color:var(--accent-cyan)">Dashboard</a> first.</div></div>';return;}
+    renderPage();
+}
+
+function getAlerts(){return DataStore.load().filter(e=>e.severity==="critical"||e.severity==="high"||e.severity==="medium");}
+
+function renderPage(){
+    const alerts=getAlerts();
+    const c=alerts.filter(a=>a.severity==="critical").length,h=alerts.filter(a=>a.severity==="high").length,m=alerts.filter(a=>a.severity==="medium").length;
+    document.getElementById("alerts-content").innerHTML=`
+        <div class="stats-row">
+            <div class="stat-card critical animate-in"><div class="stat-header"><span class="stat-label">Critical</span><div class="stat-icon">!</div></div><div class="stat-value">${c}</div><div class="stat-change">Immediate action</div></div>
+            <div class="stat-card high animate-in"><div class="stat-header"><span class="stat-label">High</span><div class="stat-icon">H</div></div><div class="stat-value">${h}</div><div class="stat-change">Needs review</div></div>
+            <div class="stat-card total animate-in"><div class="stat-header"><span class="stat-label">Medium</span><div class="stat-icon">M</div></div><div class="stat-value">${m}</div><div class="stat-change">Monitor</div></div>
+            <div class="stat-card resolved animate-in"><div class="stat-header"><span class="stat-label">Total Alerts</span><div class="stat-icon">A</div></div><div class="stat-value">${alerts.length}</div><div class="stat-change">From parsed logs</div></div>
+        </div>
+        <div class="card"><div class="card-body"><div class="filter-bar">
+            <button class="filter-chip active" onclick="setFilter('all',this)">All</button>
+            <button class="filter-chip" onclick="setFilter('critical',this)">Critical</button>
+            <button class="filter-chip" onclick="setFilter('high',this)">High</button>
+            <button class="filter-chip" onclick="setFilter('medium',this)">Medium</button>
+            <span class="alerts-count" id="filtered-count"></span>
+        </div></div></div>
+        <div class="alerts-grid" id="alerts-grid"></div>`;
+    renderAlerts();
+}
+
+function setFilter(f,el){currentFilter=f;document.querySelectorAll(".filter-chip").forEach(c=>c.classList.remove("active"));el.classList.add("active");renderAlerts();}
+
+function renderAlerts(){
+    const grid=document.getElementById("alerts-grid");if(!grid)return;
+    let alerts=getAlerts();const search=(document.getElementById("alert-search")?.value||"").toLowerCase();
+    if(currentFilter!=="all")alerts=alerts.filter(a=>a.severity===currentFilter);
+    if(search)alerts=alerts.filter(a=>(a.event_type+a.source+a.source_ip+a.message).toLowerCase().includes(search));
+    document.getElementById("filtered-count").textContent=alerts.length+" alerts";
+    grid.innerHTML=alerts.slice(0,50).map((a,i)=>`
+        <div class="alert-card ${a.severity}" style="animation:fadeInUp .3s ease ${i*30}ms both" onclick="showDetail('${a.id}')">
+            <div class="alert-card-header"><div class="alert-card-title"><span class="severity-badge ${a.severity}"><span class="dot"></span>${a.severity}</span> ${a.event_type}</div><span style="font-family:var(--font-mono);font-size:.7rem;color:var(--text-muted)">${a.id}</span></div>
+            <div class="alert-card-body">
+                <p style="font-size:.78rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.message||"No description"}</p>
+                <div class="alert-meta">
+                    <div class="alert-meta-item"><span class="alert-meta-label">Source</span><span class="alert-meta-value">${a.source}</span></div>
+                    <div class="alert-meta-item"><span class="alert-meta-label">Risk Score</span><span class="alert-meta-value" style="color:${COLORS[a.severity]}">${a.risk_score}/100</span></div>
+                    <div class="alert-meta-item"><span class="alert-meta-label">Source IP</span><span class="alert-meta-value">${a.source_ip||"-"}</span></div>
+                    <div class="alert-meta-item"><span class="alert-meta-label">Time</span><span class="alert-meta-value">${formatTime(a.timestamp)}</span></div>
+                </div>
+            </div>
+        </div>`).join("");
+}
+
+function showDetail(id){
+    const a=DataStore.load().find(e=>e.id===id);if(!a)return;
+    document.getElementById("modal-title").textContent=a.id+" - "+a.event_type;
+    document.getElementById("modal-body").innerHTML=`
+        <div class="detail-grid">
+            <div class="detail-item"><span class="detail-label">Severity</span><span class="severity-badge ${a.severity}"><span class="dot"></span>${a.severity}</span></div>
+            <div class="detail-item"><span class="detail-label">Risk Score</span><span class="detail-value" style="color:${COLORS[a.severity]};font-family:var(--font-mono);font-size:1.2rem;font-weight:700">${a.risk_score}/100</span></div>
+            <div class="detail-item"><span class="detail-label">Source</span><span class="detail-value">${a.source}</span></div>
+            <div class="detail-item"><span class="detail-label">Event Type</span><span class="detail-value">${a.event_type}</span></div>
+            <div class="detail-item"><span class="detail-label">Source IP</span><span class="detail-value" style="font-family:var(--font-mono)">${a.source_ip||"-"}</span></div>
+            <div class="detail-item"><span class="detail-label">Dest IP</span><span class="detail-value" style="font-family:var(--font-mono)">${a.dest_ip||"-"}</span></div>
+            <div class="detail-item"><span class="detail-label">Timestamp</span><span class="detail-value" style="font-family:var(--font-mono)">${formatTime(a.timestamp)}</span></div>
+            <div class="detail-item"><span class="detail-label">Status</span><span class="detail-value">${a.status}</span></div>
+            <div class="detail-divider"></div>
+            <div class="detail-item" style="grid-column:1/-1"><span class="detail-label">Message</span><span class="detail-value" style="line-height:1.6">${a.message||"-"}</span></div>
+            <div class="detail-item" style="grid-column:1/-1"><span class="detail-label">Raw Log</span><div class="raw-log">${(a.raw||"").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</div></div>
+        </div>`;
+    document.getElementById("modal-overlay").classList.add("show");
+}
+
+function closeModal(e){if(!e||e.target===document.getElementById("modal-overlay"))document.getElementById("modal-overlay").classList.remove("show");}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
+
+function exportAlerts(){
+    const alerts=getAlerts();
+    const hdr="ID,Timestamp,Severity,Type,Source,Source IP,Risk,Message";
+    const rows=alerts.map(a=>`${a.id},${a.timestamp},${a.severity},"${a.event_type}","${a.source}",${a.source_ip||""},${a.risk_score},"${(a.message||"").replace(/"/g,'""')}"`);
+    downloadFile([hdr,...rows].join("\n"),"sentinelops-alerts.csv","text/csv");
+}
+
+document.addEventListener("DOMContentLoaded",init);
+</script>
+</body>
+</html>
